@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Isometric Ball Game Prototype</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333;
+        }
+        canvas {
+            display: block;
+            background-color: #f0f0f0;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="controls">Controls: W (up), A (left), S (down), D (right)</div>
+
+    <script>
+        // Get the canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Initial grid settings (will be recalculated)
+        let tileWidth = 60;
+        let tileHeight = 30;
+        let gridSize = 100; // Much larger grid to allow exploration
+        let visibleTilesX = 0;
+        let visibleTilesY = 0;
+        
+        // Camera position (will track the ball)
+        const camera = {
+            x: 0,
+            y: 0
+        };
+        
+        // Ball properties (initial values, will be updated)
+        const ball = {
+            x: gridSize / 2, // Start in middle of the grid
+            y: gridSize / 2,
+            radius: 20,
+            color: 'red',
+            speed: 0.05
+        };
+        
+        // Calculate ideal grid size to fill screen
+        function calculateGridSize() {
+            // Calculate tile size based on screen dimensions
+            const screenSize = Math.min(window.innerWidth, window.innerHeight);
+            tileWidth = Math.max(40, Math.floor(screenSize / 15));
+            tileHeight = tileWidth / 2;
+            
+            // Calculate how many tiles we need to fill the screen
+            visibleTilesX = Math.ceil(window.innerWidth / (tileWidth * 0.5)) + 4;
+            visibleTilesY = Math.ceil(window.innerHeight / (tileHeight * 0.5)) + 4;
+            
+            // Ensure ball radius is proportional to tile size
+            ball.radius = tileWidth / 3;
+            
+            // Set initial camera position to center on ball
+            camera.x = ball.x;
+            camera.y = ball.y;
+        }
+        
+        // Set canvas to full window size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            calculateGridSize(); // Recalculate grid dimensions on resize
+        }
+        
+        // Initial resize and add event listener for window resizing
+        resizeCanvas();
+        window.addEventListener('resize', function() {
+            resizeCanvas();
+        });
+
+        // Movement control variables
+        const keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
+
+        // Event listeners for keyboard (WASD)
+        window.addEventListener('keydown', function(e) {
+            switch(e.key.toLowerCase()) {
+                case 'w':
+                    keys.up = true;
+                    break;
+                case 's':
+                    keys.down = true;
+                    break;
+                case 'a':
+                    keys.left = true;
+                    break;
+                case 'd':
+                    keys.right = true;
+                    break;
+            }
+        });
+
+        window.addEventListener('keyup', function(e) {
+            switch(e.key.toLowerCase()) {
+                case 'w':
+                    keys.up = false;
+                    break;
+                case 's':
+                    keys.down = false;
+                    break;
+                case 'a':
+                    keys.left = false;
+                    break;
+                case 'd':
+                    keys.right = false;
+                    break;
+            }
+        });
+
+        // Convert isometric coordinates to screen coordinates with camera offset
+        function isoToScreen(x, y) {
+            // Apply camera offset to keep ball centered
+            const offsetX = x - camera.x;
+            const offsetY = y - camera.y;
+            
+            // Convert to screen coordinates
+            const screenX = (offsetX - offsetY) * tileWidth / 2 + canvas.width / 2;
+            const screenY = (offsetX + offsetY) * tileHeight / 2 + canvas.height / 2;
+            
+            return { x: screenX, y: screenY };
+        }
+
+        // Draw isometric grid
+        function drawGrid() {
+            // Calculate the visible range to optimize rendering
+            const tilesToShow = Math.max(visibleTilesX, visibleTilesY);
+            
+            // Determine visible tile range based on camera position
+            const startX = Math.max(0, Math.floor(camera.x - tilesToShow / 2));
+            const endX = Math.min(gridSize, Math.ceil(camera.x + tilesToShow / 2));
+            const startY = Math.max(0, Math.floor(camera.y - tilesToShow / 2));
+            const endY = Math.min(gridSize, Math.ceil(camera.y + tilesToShow / 2));
+            
+            // Draw only the visible tiles
+            for (let x = startX; x < endX; x++) {
+                for (let y = startY; y < endY; y++) {
+                    const screenPos = isoToScreen(x, y);
+                    
+                    // Skip tiles that are definitely offscreen
+                    if (screenPos.x < -tileWidth || screenPos.x > canvas.width + tileWidth || 
+                        screenPos.y < -tileHeight || screenPos.y > canvas.height + tileHeight) {
+                        continue;
+                    }
+                    
+                    // Draw tile
+                    ctx.beginPath();
+                    ctx.moveTo(screenPos.x, screenPos.y);
+                    ctx.lineTo(screenPos.x + tileWidth / 2, screenPos.y + tileHeight / 2);
+                    ctx.lineTo(screenPos.x, screenPos.y + tileHeight);
+                    ctx.lineTo(screenPos.x - tileWidth / 2, screenPos.y + tileHeight / 2);
+                    ctx.closePath();
+                    
+                    // Checkerboard pattern
+                    if ((x + y) % 2 === 0) {
+                        ctx.fillStyle = '#ddd';
+                    } else {
+                        ctx.fillStyle = '#ccc';
+                    }
+                    ctx.fill();
+                    ctx.strokeStyle = '#999';
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // Draw the ball
+        function drawBall() {
+            // Ball is always at the center of the screen
+            const screenPos = isoToScreen(ball.x, ball.y);
+            
+            // Ball shadow
+            ctx.beginPath();
+            ctx.ellipse(screenPos.x, screenPos.y + 6, ball.radius, ball.radius / 2, 0, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fill();
+            
+            // Ball
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y - ball.radius, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            // Simple highlight for 3D effect
+            ctx.beginPath();
+            ctx.arc(screenPos.x - ball.radius/3, screenPos.y - ball.radius - ball.radius/3, ball.radius/4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fill();
+        }
+        
+        // Draw grid coordinates (debugging feature)
+        function drawCoordinates() {
+            ctx.font = '10px Arial';
+            ctx.fillStyle = 'black';
+            ctx.textAlign = 'center';
+            
+            // Draw coords for visible tiles
+            const tilesToShow = Math.max(visibleTilesX, visibleTilesY);
+            const startX = Math.max(0, Math.floor(camera.x - tilesToShow / 2));
+            const endX = Math.min(gridSize, Math.ceil(camera.x + tilesToShow / 2));
+            const startY = Math.max(0, Math.floor(camera.y - tilesToShow / 2));
+            const endY = Math.min(gridSize, Math.ceil(camera.y + tilesToShow / 2));
+            
+            for (let x = startX; x < endX; x++) {
+                for (let y = startY; y < endY; y++) {
+                    const screenPos = isoToScreen(x, y);
+                    
+                    // Skip tiles that are definitely offscreen
+                    if (screenPos.x < 0 || screenPos.x > canvas.width || 
+                        screenPos.y < 0 || screenPos.y > canvas.height) {
+                        continue;
+                    }
+                    
+                    ctx.fillText(`${x},${y}`, screenPos.x, screenPos.y + 4);
+                }
+            }
+            
+            // Show current ball position
+            ctx.font = '14px Arial';
+            ctx.fillStyle = 'black';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Ball: ${Math.floor(ball.x)},${Math.floor(ball.y)}`, 10, 20);
+        }
+
+        // Update game state
+        function update(deltaTime) {
+            // Handle movement
+            if (keys.up && ball.y > 0) {
+                ball.y -= ball.speed * deltaTime;
+            }
+            if (keys.down && ball.y < gridSize - 1) {
+                ball.y += ball.speed * deltaTime;
+            }
+            if (keys.left && ball.x > 0) {
+                ball.x -= ball.speed * deltaTime;
+            }
+            if (keys.right && ball.x < gridSize - 1) {
+                ball.x += ball.speed * deltaTime;
+            }
+            
+            // Update camera to follow ball with slight smoothing
+            camera.x += (ball.x - camera.x) * 0.1;
+            camera.y += (ball.y - camera.y) * 0.1;
+        }
+
+        // Game loop
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            // Calculate time difference
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Update game state
+            update(deltaTime);
+            
+            // Draw game elements
+            drawGrid();
+            drawBall();
+            
+            // Request next frame
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
